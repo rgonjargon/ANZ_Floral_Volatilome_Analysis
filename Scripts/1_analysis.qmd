@@ -1,0 +1,235 @@
+---
+title: "Simulation Suite"
+subtitle: "v0.1 - The Digitial Sim"
+author: "Dr Tom Moore - Statistical Scientist"
+date: last-modified
+output-file: "analysis_report.html"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-title: "Contents"
+    theme: united
+    highlight-style: tango
+    fig-width: 9
+    fig-height: 6
+    code-tools: true
+    code-fold: false
+    code-overflow: scroll
+    df-print: paged
+    embeded-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| results: false
+
+# Install packages and functions
+if (!requireNamespace("pak", quietly = TRUE)) {
+  install.packages("pak")
+}
+
+packages <- c(
+  "tidyverse", "here", "janitor", "readxl", "modelr",
+  "reshape2", "arrow", "pins", "usethis",
+  "ggtext", "forcats", "cowplot", "ggdendro",
+  "gplots", "GGally", "dagitty", "ggdag", "simDAG",
+  "future", "furrr", "rstan", "bnlearn", "Rgraphviz",
+  "brms", "bayesplot", "tidybayes", "cmdstanr", "purrr", "MASS",
+  "nadiv", "graph4lg", "marginaleffects", "bayesplot"
+)
+
+# Install missing packages with pak
+missing_pkgs <- packages[!sapply(packages, requireNamespace, quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  pak::pkg_install(missing_pkgs, ask = FALSE)
+  cat("Installed:", paste(missing_pkgs, collapse = ", "), "\n")
+} else {
+  cat("All Packages Installed :) \n")
+}
+
+# Load all packages
+invisible(sapply(packages, library, character.only = TRUE))
+
+bayesplot::color_scheme_set("blue")                                    # Set color scheme
+options(mc.cores = parallel::detectCores())                            # Parallel Chains
+
+# Stan Location: Production Sever Settings 
+cmdstanr::set_cmdstan_path("/powerplant/workspace/hrltxm/workbench-k8s/stan/vanilla_stan/cmdstan-2.36.0")
+
+# Import functions from source
+source(here("Scripts/sim_functions.R"))
+```
+
+# Introduction
+
+-  A minimal reproducible example of a simulation suite that demonstrates how environment, genetics, and experimental design play a role in recovering known population parameters and therefore implications for ecological inference. 
+
+
+# Overview
+
+The simulation should create an array (multiple matrices) that contains all the simulated trial information. Each matrix will represent a different variable (i.e., in this example "pid", "site", "a", "b", "x", "t1", "t2", "t3") that is created by unique function by different team members (with the intent that this will become a targets node): i.e.,
+
+
+- Tom will create the functions to simulate environmental covariates (a and b) and the overall DAG (i.e., how all the matrices are related to one another based on the DGP or a DAG)
+
+- Kathy will create the function to explore different trial designs + the number of checks to be included
+
+- Poppy and Linley will create a function estimate the breeding values based on phylogeny
+
+- Marcus will oversee the pipeline development (at the moment the pipeline isn't very flexible).
+
+
+- At the end it would be good to have a function that iterates over the pipeline (i.e., similar to a power analysis - but would need to specify critorion to test).
+- Should be flexible to different types of DAGS
+- Should be parameterised in a way to showcase why it is important to consider experimental design, covariates, and genetic relationships when estimating breeding values.
+
+# Simulate data
+```{r}
+#| label: simulated_data
+#| fig.height: 6
+#| fig.width:  12
+
+# Create a 10*10 design matrix (n+1 = check)
+init_design <- matrix(c(
+  
+  1, 2, 3, 4, 5,    1, 2, 3, 4, 5,
+  6, 7, 8, 1, 2,    6, 7, 8, 1, 2,
+  3, 4, 5, 6, 7,    3, 4, 5, 6, 7,
+  8, 1, 2, 3, 4,    8, 1, 2, 3, 4,
+  5, 6, 7, 8, 9,    5, 6, 7, 8, 9,
+  
+  1, 2, 3, 4, 5,    1, 2, 3, 4, 5,
+  6, 7, 8, 1, 2,    6, 7, 8, 1, 2,
+  3, 4, 5, 6, 7,    3, 4, 5, 6, 7,
+  8, 1, 2, 3, 4,    8, 1, 2, 3, 4,
+  5, 6, 7, 8, 9,    5, 6, 7, 8, 9
+
+), nrow = 10, ncol = 10, byrow = TRUE)
+
+
+# Create a 10*10 design matrix (n+1 = check)
+bad_design <- matrix(c(
+  
+  1, 1, 1, 1, 1,    3, 3, 3, 3, 3,
+  1, 1, 1, 1, 1,    3, 3, 3, 3, 3,
+  1, 1, 9, 2, 2,    3, 3, 9, 4, 4,
+  2, 2, 2, 2, 2,    4, 4, 4, 4, 4,
+  2, 2, 2, 2, 2,    4, 4, 4, 4, 4,
+  
+  5, 5, 5, 5, 5,    7, 7, 7, 7, 7,
+  5, 5, 5, 5, 5,    7, 7, 7, 7, 7,
+  5, 5, 9, 6, 6,    7, 7, 9, 8, 8,
+  6, 6, 6, 6, 6,    8, 8, 8, 8, 8,
+  6, 6, 6, 6, 6,    8, 8, 8, 8, 8
+
+), nrow = 10, ncol = 10, byrow = TRUE)
+
+
+# Usage with default parameters:
+sim <- sim_trial(seed = 123,          # Seed for reproducibility
+                 n = 10,              # Trial size
+                 n_sites = 4,         # Number of sites
+                 eff_site = 10,       # Site effect size
+                 
+                 n_pid = 8,           # PID number
+                 eff_pid = 1.2,       # PID effect size
+                 n_chks = 4,          # Check number
+                 per_chks = 0.90,     # Check percentile
+                 
+                 s_autocorr_a = 50,   # Climate autocorrelation
+                 s_autocorr_b = 5000, # Soil autocorrelation
+                 x_beta_a =  14.1,    # Climate effect on PID
+                 x_beta_b = -15.7,    # Soil effect on PID
+              
+                 custom_pid_matrix = init_design # bad_design
+                 )
+
+sim$df_wide |> group_by(pid) |> tally()
+
+print_matrices(sim$array, c("pid", "site"))
+
+plot_sim_trial(sim, 
+               plot_data = TRUE,
+               standardize = TRUE,
+               plot_dag = TRUE)
+```
+
+**Figure 1:** DAG of the simulated data that shows the relationships (arrows) between the outcome (Y), treatment (X), and other measured variables (A + B). The numbers on the arrows represent the known magnitude and direction of relationships with Y.
+:::
+
+::: {.panel-tabset}
+
+## BLUPS
+
+```{r}
+#| label: blups
+#| echo: false
+
+# Models
+mod_1 <- fit_brm(model_name = "mod_1", 
+                 covariates = TRUE,
+                 site_effects = TRUE)
+
+mod_2 <- fit_brm(model_name = "mod_2", 
+                 covariates = FALSE,
+                 site_effects = TRUE)
+
+mod_3 <- fit_brm(model_name = "mod_3", 
+                 covariates = FALSE,
+                 site_effects = FALSE)
+
+
+plot_pid_effects(mod_1, resp = "t1")
+plot_pid_effects(mod_2, resp = "t1")
+plot_pid_effects(mod_3, resp = "t1")
+```
+
+- When there is no environmental information the number of checks is very important.
+
+## Output
+
+```{r}
+#| label: model-output
+#| echo: false
+ 
+summary(mod_1)
+summary(mod_2)
+summary(mod_3)
+```
+
+## Validation
+
+```{r}
+#| label: validation
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| results: false
+#| layout-ncol: 3
+#| fig.width: 4
+#| fig.height: 2
+
+pp_check(mod_1, resp = "t1")
+pp_check(mod_2, resp = "t1")
+pp_check(mod_3, resp = "t1")
+```
+
+:::
+
+# References
+
+McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
+
+R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
+
+::: {.callout-tip title="Session Information" collapse="true"}
+```{r}
+#| label: session-info
+
+utils::sessionInfo()
+``` 

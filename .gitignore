@@ -1,0 +1,72 @@
+# R History and Data Files
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+
+# R Session Data
+.Rproj.user/
+*.Rproj
+
+# R Package Build Files
+*.tar.gz
+*.zip
+src/*.o
+src/*.so
+src/*.dll
+
+# R Documentation
+*.Rcheck/
+*.Rout
+*.rds
+*.rda
+
+# knitr and R Markdown
+*.utf8.md
+*.knit.md
+.Rproj.user
+*_cache/
+*_files/
+
+# pkgdown
+docs/
+_pkgdown.yml
+
+# blogdown
+.hugo_build.lock
+
+# bookdown
+_book/
+_bookdown_files/
+
+# Shiny
+rsconnect/
+*.rsconnect
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment Variables
+.env
+.Renviron
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Project-Specific Folders
+Analysis/Models/
