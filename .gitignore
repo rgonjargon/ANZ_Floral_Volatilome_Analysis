@@ -25,4 +25,4 @@ Thumbs.db
 .Renviron
 
 # Data (optional / large)
-voc_Idata.xlsx
+voc_Idata*
