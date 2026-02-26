@@ -6,6 +6,8 @@ Analysis of floral volatile organic compounds (FVOCs) from New Zealand plants—
 
 **Cite:** [https://doi.org/10.5281/zenodo.18793708](https://doi.org/10.5281/zenodo.18793708)
 
+**Repository:** [https://github.com/rgonjargon/ANZ_Floral_Volatilome_Analysis](https://github.com/rgonjargon/ANZ_Floral_Volatilome_Analysis)
+
 ## Project structure
 
 | Folder / file | Contents |
