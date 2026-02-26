@@ -1,9 +1,8 @@
 ---
-title: "Simulation Suite"
-subtitle: "v0.1 - The Digitial Sim"
-author: "Dr Tom Moore - Statistical Scientist"
+title: "NZ Floral Volatilome Analysis"
+author: "Flore Mas & Tom Moore"
 date: last-modified
-output-file: "analysis_report.html"
+output-file: "2_voc_analysis.html"
 format:
   html:
     toc: true
@@ -17,7 +16,7 @@ format:
     code-fold: false
     code-overflow: scroll
     df-print: paged
-    embeded-resources: true
+    embed-resources: true
 execute:
   echo: false
   warning: false
@@ -28,202 +27,671 @@ execute:
 #| label: setup
 #| results: false
 
-# Install packages and functions
-if (!requireNamespace("pak", quietly = TRUE)) {
-  install.packages("pak")
-}
-
+# --- Packages: install if missing, then load ---
+if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")
 packages <- c(
-  "tidyverse", "here", "janitor", "readxl", "modelr",
-  "reshape2", "arrow", "pins", "usethis",
-  "ggtext", "forcats", "cowplot", "ggdendro",
-  "gplots", "GGally", "dagitty", "ggdag", "simDAG",
-  "future", "furrr", "rstan", "bnlearn", "Rgraphviz",
-  "brms", "bayesplot", "tidybayes", "cmdstanr", "purrr", "MASS",
-  "nadiv", "graph4lg", "marginaleffects", "bayesplot"
+  "tidyverse", "readxl", "here", "vegan", "janitor", "tidytext", "ggvenn",
+  "reshape2", "remotes", "devtools", "ape", "ggtree", "caper", "phytools",
+  "patchwork", "RColorBrewer"
 )
-
-# Install missing packages with pak
 missing_pkgs <- packages[!sapply(packages, requireNamespace, quietly = TRUE)]
 if (length(missing_pkgs) > 0) {
   pak::pkg_install(missing_pkgs, ask = FALSE)
   cat("Installed:", paste(missing_pkgs, collapse = ", "), "\n")
-} else {
-  cat("All Packages Installed :) \n")
+}
+invisible(sapply(packages, library, character.only = TRUE))
+# geomorph (optional: requires X11/OpenGL on macOS)
+if (requireNamespace("geomorph", quietly = TRUE)) {
+  tryCatch(suppressPackageStartupMessages(library("geomorph", character.only = TRUE)), error = function(e) NULL)
 }
 
-# Load all packages
-invisible(sapply(packages, library, character.only = TRUE))
-
-bayesplot::color_scheme_set("blue")                                    # Set color scheme
-options(mc.cores = parallel::detectCores())                            # Parallel Chains
-
-# Stan Location: Production Sever Settings 
-cmdstanr::set_cmdstan_path("/powerplant/workspace/hrltxm/workbench-k8s/stan/vanilla_stan/cmdstan-2.36.0")
-
-# Import functions from source
-source(here("Scripts/sim_functions.R"))
+# GitHub packages (ggvegan, V.PhyloMaker2)
+if (!requireNamespace("ggvegan", quietly = TRUE)) remotes::install_github("gavinsimpson/ggvegan")
+if (!requireNamespace("V.PhyloMaker2", quietly = TRUE)) devtools::install_github("jinyizju/V.PhyloMaker2")
+library("ggvegan")
+library("V.PhyloMaker2")
 ```
 
-# Introduction
+*The chemical diversity of floral volatilomes in native and exotic plants shaping Aotearoa-New Zealand's odourscapes, implications for plant-insect interactions*
 
--  A minimal reproducible example of a simulation suite that demonstrates how environment, genetics, and experimental design play a role in recovering known population parameters and therefore implications for ecological inference. 
+Mas F.^1^, Manning L-A.^1^, Moore T.^1^, Cutting BT.^2^ and Evans LJ.^2^
 
+^1^New Zealand Institute for Bioeconomy Science Limited, Lincoln 7608, New Zealand.
+
+^2^New Zealand Institute for Bioeconomy Science Limited, Ruakura 3241, New Zealand.
 
 # Overview
 
-The simulation should create an array (multiple matrices) that contains all the simulated trial information. Each matrix will represent a different variable (i.e., in this example "pid", "site", "a", "b", "x", "t1", "t2", "t3") that is created by unique function by different team members (with the intent that this will become a targets node): i.e.,
+This report analyses floral volatile organic compounds (VOCs) from New Zealand plants. We use a cleaned dataset of compounds by sample, with plant species classified as **Natives**, **Crops**, or **Ornamentals**. The analysis covers: (1) chemical class distribution across categories, (2) diversity metrics (richness, Shannon/Hill, evenness) and their comparison by category, (3) overlap of compounds between categories (Venn), (4) seasonal phenology of VOC composition, and (5) supplementary ordination (NMDS), dispersion, and phylogeny. Statistical tests include chi-square (class vs category), ANOVA and post-hoc Wilcoxon (diversity), and Kruskal–Wallis (phenology); test outputs are in collapsible sections so you can show or hide them.
 
+AI was used to format the analysis and this Quarto document.
 
-- Tom will create the functions to simulate environmental covariates (a and b) and the overall DAG (i.e., how all the matrices are related to one another based on the DGP or a DAG)
+::: {.callout-note title="Dataframe (click to show/hide)" collapse="true"}
+## Dataframe
 
-- Kathy will create the function to explore different trial designs + the number of checks to be included
-
-- Poppy and Linley will create a function estimate the breeding values based on phylogeny
-
-- Marcus will oversee the pipeline development (at the moment the pipeline isn't very flexible).
-
-
-- At the end it would be good to have a function that iterates over the pipeline (i.e., similar to a power analysis - but would need to specify critorion to test).
-- Should be flexible to different types of DAGS
-- Should be parameterised in a way to showcase why it is important to consider experimental design, covariates, and genetic relationships when estimating breeding values.
-
-# Simulate data
 ```{r}
-#| label: simulated_data
+#| label: data_cleaning
+#| echo: false
+
+# --- Load and clean raw VOC data ---
+# Load raw VOC data and coerce to factors
+df <- read_excel(here::here("Analysis/Data/voc_ldata.xlsx"), sheet = "LDATA_ALL_tous3")
+df <- as.data.frame(unclass(df), stringsAsFactors = TRUE)
+
+# Clean names and standardise factor labels
+df <- df |> clean_names() |> as.data.frame(stringsAsFactors = TRUE) |>
+  mutate(across(where(is.factor), ~ as.factor(str_to_sentence(as.character(.)))))
+
+# Numeric columns
+cols_numeric <- c("sum_area", "area", "tot_voc", "n_voc")
+df[, cols_numeric] <- lapply(df[, cols_numeric], as.numeric)
+
+# Sample-level ID and category (Natives / Crops / Ornamentals)
+df <- df |> mutate(
+  unique_id = as.factor(paste(as.character(sample), substr(as.character(location), 1, 3), sep = "-")),
+  new_cat = case_when(
+    native_exotic == "Native" ~ "Natives",
+    native_exotic == "Exotic" & crop_wild == "Crop" ~ "Crops",
+    native_exotic == "Exotic" & crop_wild == "Wild" ~ "Ornamentals",
+    TRUE ~ NA_character_
+  ),
+  new_cat = as.factor(new_cat)
+)
+
+# Chemical class labels: rename and set order
+df <- df |> mutate(
+  new_class = fct_recode(new_class, "Fatty acid derivatives" = "Fatty_acid_derivatives"),
+  new_sub_class = fct_recode(new_sub_class,
+    "Benzenoids unknown" = "Benzenoids_unknown", "Fatty unknown" = "Fatty_unknown",
+    "Fatty alcohols" = "Fatty_alcohols", "Fatty aldehydes" = "Fatty_aldehydes",
+    "Fatty esters" = "Fatty_esters", "Phenolic acids" = "Phenolic_acids",
+    "Irregular terpenes" = "Irregular_terpenes", "Terpenoids unknown" = "Terpenoids-unknown")
+)
+df$new_class <- factor(df$new_class, levels = c("Fatty acid derivatives", "Terpenoids", "Benzenoid", "NA"))
+df$new_sub_class <- factor(df$new_sub_class,
+  levels = c("Hydrocarbons", "Fatty esters", "Fatty aldehydes", "Fatty alcohols", "Fatty unknown", "Lactones",
+    "Monoterpenes", "Sesquiterpenes", "Irregular terpenes", "Terpenoids unknown", "Benzenoids unknown",
+    "Phenylpropanoids", "Phenolic acids", "Phenylethanoids", "NA"))
+
+# Keep required columns and compute relative abundance per sample
+df <- df |> dplyr::select(compound, unique_id, plant, type, new_cat, genus, family, order,
+  location, region, new_class, new_sub_class, sum_area, perc_area, prop_area, smiles, inchikeys)
+df <- df |> group_by(compound, unique_id) |> mutate(abundance = ifelse(is.na(sum_area), perc_area, sum_area)) |>
+  ungroup() |> group_by(unique_id) |> mutate(sum_abund = sum(abundance)) |> ungroup() |>
+  group_by(compound, unique_id) |> mutate(rel_abund = abundance / sum_abund) |> ungroup()
+
+# Reclassify Trifolium/Lavandula as Ornamentals
+df <- df |> mutate(
+  new_cat = case_when(
+    plant %in% c("Trifolium incarnatum", "Trifolium pratense", "Trifolium repens",
+                 "Lavandula angustifolia", "Lavandula dentata") ~ "Ornamentals",
+    TRUE ~ as.character(new_cat)
+  ),
+  new_cat = factor(new_cat)
+)
+```
+
+**Dataframe structure** (`str(df)`):
+
+```{r}
+#| label: str_df
+#| echo: false
+
+# Show structure of main dataframe
+str(df)
+```
+:::
+
+::: {.callout-note title="Descriptive statistics (click to show/hide)" collapse="true"}
+## Descriptive statistics
+
+Summaries by sample, plant, category, and chemical class (shown below).
+
+```{r}
+#| label: descriptive_statistics
+#| echo: false
+
+# --- Descriptive summaries ---
+# By sample (unique_id): compound count and total VOC
+summary_unique_id <- df |> group_by(unique_id) |>
+  summarise(unique_id_compound = n_distinct(compound), total_voc = sum(abundance))
+
+# By plant: compound count, replicates, mean total VOC
+summary_plant <- df |> group_by(unique_id) |>
+  mutate(unique_id_compound = n_distinct(compound), total_voc = sum(abundance)) |>
+  ungroup() |> group_by(plant) |>
+  summarise(type = first(new_cat), count_compound = n_distinct(compound),
+    n_replicates = n_distinct(unique_id), mean_total_voc = mean(total_voc), .groups = "drop")
+
+# By category (new_cat): plants, compound stats, total VOC range
+summary_categories <- df |> group_by(unique_id) |>
+  mutate(unique_id_compound = n_distinct(compound), total_voc = sum(abundance)) |>
+  ungroup() |> group_by(plant) |>
+  mutate(count_compound = n_distinct(compound), nb_replicates = n_distinct(unique_id), mean_total_voc = mean(total_voc)) |>
+  ungroup() |> group_by(new_cat) |>
+  summarise(nb_plant = n_distinct(plant), mean_comp = mean(count_compound), median_voc = median(count_compound),
+    min_comp = min(count_compound), max_comp = max(count_compound),
+    mean_total_voc = mean(mean_total_voc), min_total_voc = min(mean_total_voc), max_total_voc = max(mean_total_voc))
+
+# By chemical class: count and percent
+summary_chem_class <- df |> group_by(new_class) |> summarise(count = n()) |> mutate(percent = 100 * count / sum(count))
+
+# Display tables in report
+head(summary_unique_id, 10)
+summary_plant
+summary_categories
+summary_chem_class
+```
+:::
+
+# Figures & hypothesis tests
+
+## Figure 1
+```{r}
+#| label: fvoc_frequency
+#| fig.width: 9
 #| fig.height: 6
-#| fig.width:  12
 
-# Create a 10*10 design matrix (n+1 = check)
-init_design <- matrix(c(
-  
-  1, 2, 3, 4, 5,    1, 2, 3, 4, 5,
-  6, 7, 8, 1, 2,    6, 7, 8, 1, 2,
-  3, 4, 5, 6, 7,    3, 4, 5, 6, 7,
-  8, 1, 2, 3, 4,    8, 1, 2, 3, 4,
-  5, 6, 7, 8, 9,    5, 6, 7, 8, 9,
-  
-  1, 2, 3, 4, 5,    1, 2, 3, 4, 5,
-  6, 7, 8, 1, 2,    6, 7, 8, 1, 2,
-  3, 4, 5, 6, 7,    3, 4, 5, 6, 7,
-  8, 1, 2, 3, 4,    8, 1, 2, 3, 4,
-  5, 6, 7, 8, 9,    5, 6, 7, 8, 9
+# Top 10 compounds by chemical class (Benzenoid, Fatty acid derivatives, Terpenoids)
+df_ranked_class <- df |> group_by(new_class) |> count(compound, sort = TRUE) |>
+  slice_max(n, n = 10, with_ties = FALSE) |> ungroup() |>
+  filter(new_class != "NA") |> droplevels() |>
+  mutate(new_class = fct_relevel(new_class, "Benzenoid", "Fatty acid derivatives", "Terpenoids"))
 
-), nrow = 10, ncol = 10, byrow = TRUE)
-
-
-# Create a 10*10 design matrix (n+1 = check)
-bad_design <- matrix(c(
-  
-  1, 1, 1, 1, 1,    3, 3, 3, 3, 3,
-  1, 1, 1, 1, 1,    3, 3, 3, 3, 3,
-  1, 1, 9, 2, 2,    3, 3, 9, 4, 4,
-  2, 2, 2, 2, 2,    4, 4, 4, 4, 4,
-  2, 2, 2, 2, 2,    4, 4, 4, 4, 4,
-  
-  5, 5, 5, 5, 5,    7, 7, 7, 7, 7,
-  5, 5, 5, 5, 5,    7, 7, 7, 7, 7,
-  5, 5, 9, 6, 6,    7, 7, 9, 8, 8,
-  6, 6, 6, 6, 6,    8, 8, 8, 8, 8,
-  6, 6, 6, 6, 6,    8, 8, 8, 8, 8
-
-), nrow = 10, ncol = 10, byrow = TRUE)
-
-
-# Usage with default parameters:
-sim <- sim_trial(seed = 123,          # Seed for reproducibility
-                 n = 10,              # Trial size
-                 n_sites = 4,         # Number of sites
-                 eff_site = 10,       # Site effect size
-                 
-                 n_pid = 8,           # PID number
-                 eff_pid = 1.2,       # PID effect size
-                 n_chks = 4,          # Check number
-                 per_chks = 0.90,     # Check percentile
-                 
-                 s_autocorr_a = 50,   # Climate autocorrelation
-                 s_autocorr_b = 5000, # Soil autocorrelation
-                 x_beta_a =  14.1,    # Climate effect on PID
-                 x_beta_b = -15.7,    # Soil effect on PID
-              
-                 custom_pid_matrix = init_design # bad_design
-                 )
-
-sim$df_wide |> group_by(pid) |> tally()
-
-print_matrices(sim$array, c("pid", "site"))
-
-plot_sim_trial(sim, 
-               plot_data = TRUE,
-               standardize = TRUE,
-               plot_dag = TRUE)
+ggplot(df_ranked_class, aes(x = reorder(compound, n), y = n, fill = new_class)) +
+  geom_bar(stat = "identity", alpha = 0.6) + coord_flip() +
+  scale_fill_manual(name = "Compound Class", values = c("#A8A6A7FF", "#006A8EFF", "#B1283AFF")) +
+  labs(x = "Floral Volatile Organic Compounds", y = "Count") +
+  theme_classic() + theme(legend.position = "right")
+ggsave(here::here("Plots", "Figure1.png"), width = 9, height = 6, dpi = 600)
 ```
 
-**Figure 1:** DAG of the simulated data that shows the relationships (arrows) between the outcome (Y), treatment (X), and other measured variables (A + B). The numbers on the arrows represent the known magnitude and direction of relationships with Y.
+## Figure 2
+```{r}
+#| label: chemical_class_distribution
+#| fig.width: 9
+#| fig.height: 3
+
+# Chemical class proportions by category (donut-style pie charts)
+df_pie <- df |> filter(new_class != "NA") |> droplevels() |>
+  group_by(new_cat, new_class) |> count() |> group_by(new_cat) |>
+  mutate(percent = (n / sum(n)) * 100) |> ungroup()
+df_pie$new_class <- factor(df_pie$new_class, levels = c("Benzenoid", "Fatty acid derivatives", "Terpenoids"))
+
+ggplot(df_pie, aes(x = "", y = percent, fill = new_class)) +
+  geom_bar(stat = "identity", width = 1, alpha = 0.8, aes(color = new_cat), linewidth = 1.5) +
+  coord_polar("y", start = 0, direction = -1) + facet_wrap(~new_cat, ncol = 3) +
+  scale_fill_manual(name = "Compound Class", values = c("#A8A6A7FF", "#006A8EFF", "#B1283AFF")) +
+  scale_color_manual(values = c("Crops" = "#DDCC77", "Natives" = "darkgreen", "Ornamentals" = "orange"), guide = "none") +
+  theme_void() + theme(legend.position = "bottom", strip.text = element_text(size = 12, face = "bold"))
+ggsave(here::here("Plots", "Figure2.png"), width = 9, height = 3, dpi = 600)
+```
+
+::: {.callout-note title="Chi-square test (chemical class vs category)" collapse="true"}
+```{r}
+#| label: chisq_fig2
+
+contingency_table <- df |> filter(new_class != "NA") |> count(new_cat, new_class) |>
+  pivot_wider(names_from = new_class, values_from = n, values_fill = 0) |> column_to_rownames("new_cat")
+print(chisq.test(contingency_table))
+```
 :::
 
-::: {.panel-tabset}
-
-## BLUPS
-
+## Figure 3
 ```{r}
-#| label: blups
-#| echo: false
+#| label: ven_diagram
+#| fig.width: 9
+#| fig.height: 6
 
-# Models
-mod_1 <- fit_brm(model_name = "mod_1", 
-                 covariates = TRUE,
-                 site_effects = TRUE)
-
-mod_2 <- fit_brm(model_name = "mod_2", 
-                 covariates = FALSE,
-                 site_effects = TRUE)
-
-mod_3 <- fit_brm(model_name = "mod_3", 
-                 covariates = FALSE,
-                 site_effects = FALSE)
-
-
-plot_pid_effects(mod_1, resp = "t1")
-plot_pid_effects(mod_2, resp = "t1")
-plot_pid_effects(mod_3, resp = "t1")
+# Venn: unique compounds per category (Crops, Natives, Ornamentals)
+venn_data <- df |> group_by(new_cat) |> summarise(compounds = list(unique(compound))) |> deframe()
+ggvenn(venn_data, fill_color = c("#DDCC77", "darkgreen", "orange"), fill_alpha = 0.5, stroke_size = 0.5, set_name_size = 5, text_size = 3)
+ggsave(here::here("Plots", "Figure3.png"), width = 9, height = 6, dpi = 600)
 ```
 
-- When there is no environmental information the number of checks is very important.
-
-## Output
-
+## Figure 4
 ```{r}
-#| label: model-output
-#| echo: false
- 
-summary(mod_1)
-summary(mod_2)
-summary(mod_3)
+#| label: top_10
+#| fig.width: 9
+#| fig.height: 3.5
+
+# Top 10 VOCs per category
+df_ranked <- df |> group_by(new_cat) |> count(compound, sort = TRUE) |>
+  slice_max(n, n = 10, with_ties = FALSE) |> ungroup()
+
+ggplot(df_ranked, aes(x = reorder_within(compound, n, new_cat), y = n, fill = new_cat)) +
+  geom_bar(stat = "identity", alpha = 0.6) + coord_flip() + facet_wrap(~new_cat, ncol = 3, scales = "free") +
+  scale_x_reordered() + scale_fill_manual(values = c("#DDCC77", "darkgreen", "orange")) +
+  labs(x = "Top 10 Volatile Organic Compounds", y = "Count") +
+  theme_classic() + theme(legend.position = "none", strip.text = element_text(size = 12, face = "bold"))
+ggsave(here::here("Plots", "Figure4.png"), width = 9, height = 3.5, dpi = 600)
 ```
 
-## Validation
-
+## Figure 5
 ```{r}
-#| label: validation
-#| echo: false
-#| message: false
-#| fig-show: hold
-#| results: false
-#| layout-ncol: 3
-#| fig.width: 4
-#| fig.height: 2
+#| label: hills_diversity
+#| fig.width: 9
+#| fig.height: 3.5
 
-pp_check(mod_1, resp = "t1")
-pp_check(mod_2, resp = "t1")
-pp_check(mod_3, resp = "t1")
+# Wide format: one row per sample, columns = compounds (abundance)
+df_wide <- df |> reshape2::dcast(unique_id + new_cat + location + region + family + order + plant ~ compound, value.var = "abundance", fun.aggregate = sum)
+df_compounds <- df_wide |> dplyr::select(where(is.numeric))
+
+# Diversity: richness (q=0), Shannon/Hill (q=1), evenness (Pielou J)
+richness <- specnumber(df_compounds)
+shannon_div <- vegan::diversity(df_compounds, index = "shannon")
+hill_q1 <- exp(shannon_div)
+evenness <- shannon_div / log(richness)
+diversity_df <- data.frame(
+  unique_id = df_wide$unique_id, new_cat = df_wide$new_cat, family = df_wide$family,
+  order = df_wide$order, plant = df_wide$plant, richness = richness, hill_q1 = hill_q1, evenness = evenness
+)
+
+# Boxplots (Richness, Evenness, Hill) by category
+pal <- c("#DDCC77", "darkgreen", "orange")
+p_richness <- ggplot(diversity_df, aes(x = new_cat, y = richness, fill = new_cat, color = new_cat)) +
+  geom_jitter(alpha = 0.1, width = 0.3) + geom_boxplot(width = 0.3, alpha = 0.5, outlier.shape = NA) +
+  scale_y_continuous(breaks = seq(0, max(diversity_df$richness), by = 10)) +
+  scale_color_manual(values = pal) + scale_fill_manual(values = pal) +
+  labs(y = "Richness", x = "") + theme_bw() +
+  theme(legend.position = "none", axis.text = element_text(size = 10), axis.title = element_text(size = 11, face = "bold"))
+p_evenness <- ggplot(diversity_df, aes(x = new_cat, y = evenness, fill = new_cat, color = new_cat)) +
+  geom_jitter(alpha = 0.1, width = 0.3) + geom_boxplot(width = 0.3, alpha = 0.5, outlier.shape = NA) +
+  scale_y_continuous(limits = c(0, 1.01), breaks = seq(0, 1, 0.2)) +
+  scale_color_manual(values = pal) + scale_fill_manual(values = pal) +
+  labs(y = "Evenness", x = "") + theme_bw() +
+  theme(legend.position = "none", axis.text = element_text(size = 10), axis.title = element_text(size = 11, face = "bold"))
+p_hill <- ggplot(diversity_df, aes(x = new_cat, y = hill_q1, fill = new_cat, color = new_cat)) +
+  geom_jitter(alpha = 0.1, width = 0.3) + geom_boxplot(width = 0.3, alpha = 0.5, outlier.shape = NA) +
+  scale_color_manual(values = pal) + scale_fill_manual(values = pal) +
+  labs(y = "Hill Diversity", x = "") + theme_bw() +
+  theme(legend.position = "none", axis.text = element_text(size = 10), axis.title = element_text(size = 11, face = "bold"))
+p_richness + p_evenness + p_hill + plot_layout(ncol = 3) + plot_annotation(tag_levels = "A")
+ggsave(here::here("Plots", "Figure5.png"), width = 9, height = 3.5, dpi = 600)
 ```
 
+::: {.callout-note title="Figure 5: Kruskal-Wallis and post-hoc Wilcoxon (diversity by category)" collapse="true"}
+```{r}
+#| label: stats_fig5
+
+kruskal.test(richness ~ new_cat, data = diversity_df)
+kruskal.test(hill_q1 ~ new_cat, data = diversity_df)
+kruskal.test(evenness ~ new_cat, data = diversity_df)
+pairwise.wilcox.test(diversity_df$richness, diversity_df$new_cat, p.adjust.method = "BH")
+pairwise.wilcox.test(diversity_df$hill_q1, diversity_df$new_cat, p.adjust.method = "BH")
+pairwise.wilcox.test(diversity_df$evenness, diversity_df$new_cat, p.adjust.method = "BH")
+```
 :::
+
+## Figure 6
+```{r}
+#| label: regional_crops
+#| fig.width: 9
+#| fig.height: 4.5
+
+# Crops only: chemical class proportions by region
+df_crops <- df |> filter(type %in% c("Arable", "Fruit"), !is.na(new_class)) |> droplevels()
+df_pie <- df_crops |> group_by(region, new_class) |> count() |> group_by(region) |>
+  mutate(percent = (n / sum(n)) * 100) |> ungroup()
+df_pie <- df_pie |> mutate(
+  region = fct_recode(region,
+    "Tropical fruit" = "Central north island",
+    "Pipfruit & Stonefruit" = "Lower north island",
+    "Arable crops" = "Upper south island",
+    "Summerfruit" = "Lower south island",
+    "Natives" = "Aotearoa"),
+  new_class = fct_relevel(new_class, "Benzenoid", "Fatty acid derivatives", "Terpenoids")
+)
+
+ggplot(df_pie, aes(x = "", y = percent, fill = new_class)) +
+  geom_bar(stat = "identity", alpha = 0.8) + coord_polar("y", start = 0, direction = -1) +
+  facet_wrap(~region) +
+  scale_fill_manual(name = "Compound Class", values = c("#A8A6A7FF", "#006A8EFF", "#B1283AFF")) +
+  theme_void() + theme(legend.position = "bottom", legend.title = element_blank(), strip.text = element_text(size = 10))
+ggsave(here::here("Plots", "Figure6.png"), width = 9, height = 4.5, dpi = 600)
+```
+
+## Figure 7
+```{r}
+#| label: phenology
+#| fig.width: 9
+#| fig.height: 6.5
+
+# Phenology: flowering season per plant; merge with VOC data
+pheno <- read_excel(here::here("Analysis/Data/flower_phenology.xlsx"), sheet = "Sheet1")
+pheno <- as.data.frame(unclass(pheno), stringsAsFactors = TRUE) |> clean_names() |>
+  mutate(across(where(is.factor), ~ as.factor(str_to_sentence(as.character(.)))))
+df_pheno <- df |> left_join(pheno, by = join_by(plant), relationship = "many-to-many") |> droplevels()
+df_pheno <- df_pheno |> mutate(season = fct_recode(season, "Autumn" = "Fall")) |> droplevels()
+df_pheno$season <- factor(df_pheno$season, levels = c("Spring", "Summer", "Autumn", "All-year"))
+
+# Filter: exclude All-year and NA chemical class; mean rel_abund by category × class × season
+df_pheno_filtered <- df_pheno |> filter(season != "All-year" & new_class != "NA") |> droplevels() |>
+  mutate(new_class = fct_relevel(new_class, "Benzenoid", "Fatty acid derivatives", "Terpenoids"))
+mean_df <- df_pheno_filtered |> group_by(new_cat, new_class, season) |>
+  summarise(mean_abund = mean(rel_abund, na.rm = TRUE), .groups = "drop")
+count_df <- df_pheno_filtered |> group_by(new_cat, season) |> summarise(nb_plant = n_distinct(plant), .groups = "drop")
+
+# Panel A: mean relative abundance by season and chemical class (by category)
+p1 <- ggplot(df_pheno_filtered, aes(x = season, y = rel_abund, colour = new_class, group = new_class)) +
+  geom_line(data = mean_df, aes(x = season, y = mean_abund, colour = new_class, group = new_class), linewidth = 1, position = position_dodge(width = 0.1)) +
+  geom_point(data = mean_df, aes(x = season, y = mean_abund, colour = new_class), position = position_dodge(width = 0.1), size = 2.5) +
+  facet_grid(new_cat ~ .) +
+  scale_colour_manual(name = "Chemical Class", values = c("Benzenoid" = "#A8A6A7FF", "Fatty acid derivatives" = "#006A8EFF", "Terpenoids" = "#B1283AFF")) +
+  labs(title = "A) Seasonal patterns of chemical classes", y = "Mean relative abundance", x = "Season") +
+  theme_classic() + theme(legend.position = "right", strip.text = element_text(size = 12, face = "bold"))
+# Panel B: number of plants flowering per season
+p2 <- ggplot(count_df, aes(x = season, y = nb_plant, fill = new_cat)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.6, alpha = 0.8) +
+  scale_fill_manual(name = "Category", values = c("#DDCC77", "darkgreen", "orange")) +
+  labs(title = "B) Number of flowering plants per season", x = "Season", y = "Number of plants") +
+  theme_classic() + theme(legend.position = "right", strip.text = element_text(size = 12, face = "bold"))
+(p1 / p2) + plot_layout(heights = c(3, 1))
+ggsave(here::here("Plots", "Figure7.png"), width = 9, height = 6.5, dpi = 600)
+```
+
+::: {.callout-note title="Figure 7: Kruskal–Wallis and post-hoc Wilcoxon (phenology by category × class)" collapse="true"}
+```{r}
+#| label: stats_phenology
+
+for (cat in levels(df_pheno_filtered$new_cat)) {
+  cat_data <- df_pheno_filtered |> filter(new_cat == cat)
+  for (class in levels(cat_data$new_class)) {
+    class_data <- cat_data |> filter(new_class == class)
+    if (nrow(class_data) > 0 & length(unique(class_data$season)) > 1) {
+      kw_test <- kruskal.test(rel_abund ~ season, data = class_data)
+      cat(cat, "-", class, ": Kruskal-Wallis p =", format.pval(kw_test$p.value, digits = 3), "\n")
+      if (kw_test$p.value < 0.05) print(pairwise.wilcox.test(class_data$rel_abund, class_data$season, p.adjust.method = "BH"))
+    }
+  }
+}
+```
+:::
+
+# Supplementary material
+
+::: {.callout-note title="Table S1 (click to show/hide)" collapse="true"}
+Summary of plant species collected by category (New Zealand native plants, and crops and ornamentals—both categories comprising plants exotic to New Zealand) with their number of unique floral volatile organic compounds (FVOCs).
+
+```{r}
+#| label: supp_table_category_family_plant
+#| results: asis
+
+supp_table <- df |> group_by(new_cat, family, plant) |> summarise(n_FVOC = n_distinct(compound), .groups = "drop") |> rename(Category = new_cat, Family = family, `Plant species` = plant, `Number of FVOCs` = n_FVOC)
+cat("<style>.supp-table-full table { width: 100% !important; table-layout: fixed; } .supp-table-full td { word-wrap: break-word; overflow-wrap: break-word; font-size: 0.9em; }</style>")
+cat("<div class='supp-table-full' style='font-size: 0.9em; width: 100%;'>")
+cat(knitr::kable(supp_table, format = "html"))
+cat("</div>")
+```
+:::
+
+```{r}
+#| label: supp_compound_summary
+#| results: asis
+
+compounds_by_class <- df |> distinct(compound, .keep_all = TRUE) |> count(new_class, name = "n_compounds") |> mutate(pct = 100 * n_compounds / sum(n_compounds))
+n_total <- sum(compounds_by_class$n_compounds)
+cat("**Total different compounds detected:** ", n_total, "\n\n")
+cat("**Percentage by chemical class:**\n")
+for (i in seq_len(nrow(compounds_by_class))) {
+  cat("- ", as.character(compounds_by_class$new_class[i]), ": ", round(compounds_by_class$pct[i], 1), "%\n", sep = "")
+}
+voc_per_plant <- df |> group_by(plant) |> summarise(n_voc = n_distinct(compound), .groups = "drop")
+max_voc <- max(voc_per_plant$n_voc)
+plant_max_voc <- voc_per_plant |> filter(n_voc == max_voc) |> dplyr::pull(plant)
+cat("\n**Plant species with the highest diversity of FVOC:** ", paste(plant_max_voc, collapse = ", "), " (", max_voc, " compounds)\n", sep = "")
+comp_per_sample <- df |> group_by(unique_id, new_cat) |> summarise(n_comp = n_distinct(compound), .groups = "drop")
+comp_summary <- comp_per_sample |> group_by(new_cat) |> summarise(median_comp = median(n_comp), min_comp = min(n_comp), max_comp = max(n_comp), .groups = "drop")
+cat("\n**Median compound composition (compounds per sample)** and range:\n")
+for (i in seq_len(nrow(comp_summary))) {
+  cat("- ", as.character(comp_summary$new_cat[i]), ": median = ", round(comp_summary$median_comp[i], 1), ", range = ", comp_summary$min_comp[i], "–", comp_summary$max_comp[i], "\n", sep = "")
+}
+```
+
+### ESM1
+```{r}
+#| label: ESM1
+#| echo: false
+#| fig.width: 9
+#| fig.height: 6
+#| fig-cap: "ESM 1. Total number of unique floral volatile organic compounds identified per plant family sampled in Aotearoa-New Zealand."
+
+# Compounds per plant family (bars ordered by count)
+df |> group_by(family) |> summarise(count_comp = n_distinct(compound), .groups = "drop") |>
+  mutate(family = fct_reorder(family, count_comp)) |>
+  ggplot(aes(x = family, y = count_comp)) + geom_col() + geom_hline(yintercept = 100, linetype = "dashed") + coord_flip() +
+  ggtitle("Number of compounds per plant family") + theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave(here::here("Plots", "ESM1.png"), width = 9, height = 6, dpi = 600)
+```
+
+### ESM2
+```{r}
+#| label: ESM2
+#| echo: false
+#| fig.width: 9
+#| fig.height: 6
+#| fig-cap: "ESM 2. Relative proportions of each chemical class per plant family."
+
+# Chemical class proportions per plant family (Benzenoid grey, Terpenoids red, Fatty acid derivatives blue, NA black)
+ggplot(df, aes(x = family, fill = new_class)) + geom_bar(position = "fill") +
+  scale_fill_manual(name = "Compound Class", values = c("Benzenoid" = "#A8A6A7FF", "Fatty acid derivatives" = "#006A8EFF", "Terpenoids" = "#B1283AFF", "NA" = "black")) +
+  ggtitle("Chemical class per plant family") + coord_flip() + scale_y_reverse() +
+  theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(y = "Relative proportions", fill = "Chemical class")
+ggsave(here::here("Plots", "ESM2.png"), width = 9, height = 6, dpi = 600)
+```
+
+### ESM3
+```{r}
+#| label: ESM3
+#| echo: false
+#| fig.width: 9
+#| fig.height: 6
+#| fig-cap: "ESM 3. Number of floral volatile organic compounds per chemical sub-class among native, ornamental and crop species from Aotearoa-New Zealand."
+
+# Chemical sub-class proportions by category; NA = black
+mycolors <- c(brewer.pal(name = "Spectral", n = 11), brewer.pal(name = "Dark2", n = 3), "black")
+df$new_sub_class <- factor(df$new_sub_class, levels = c("Fatty alcohols", "Fatty aldehydes", "Fatty esters", "Fatty unknown", "Hydrocarbons", "Lactones", "Monoterpenes", "Sesquiterpenes", "Irregular terpenes", "Terpenoids unknown", "Phenolic acids", "Phenylethanoids", "Phenylpropanoids", "Benzenoids unknown", "NA"))
+ggplot(df, aes(x = new_cat, fill = new_sub_class)) + geom_bar(position = "fill") +
+  ggtitle("Chemical sub-class per category") + coord_flip() +
+  labs(x = "Origin", y = "Proportions", fill = "Chemical sub-class") +
+  theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(face = "bold", size = 10)) +
+  scale_fill_manual(values = mycolors)
+ggsave(here::here("Plots", "ESM3.png"), width = 9, height = 6, dpi = 600)
+```
+
+::: {.callout-note title="ESM3: Count (n) by category and chemical sub-class (click to show/hide)" collapse="true"}
+```{r}
+#| label: esm3_table
+
+esm3_counts <- df |> count(new_cat, new_sub_class, name = "n") |> rename(Category = new_cat, `Chemical sub-class` = new_sub_class)
+esm3_counts
+```
+:::
+
+### ESM4
+```{r}
+#| label: ESM4
+#| echo: false
+#| fig.width: 9
+#| fig.height: 6
+#| fig-cap: "ESM 4. Non-metric multidimensional scaling (NMDS) representation of the floral volatile organic compounds (FVOCs) composition of each sample for each plant (represented by a point) among the three categories: crops (light yellow), ornamentals (orange) and natives (green) sampled in Aotearoa-New Zealand."
+
+# NMDS on plant × compound matrix (Bray–Curtis); exclude ornamental outliers
+df_wide_full <- df |> reshape2::dcast(plant + new_cat + family + order ~ compound, value.var = "abundance", fun.aggregate = sum)
+excluded_idx <- c(8, 47, 67, 102)
+excluded_plants <- df_wide_full |> slice(excluded_idx) |> dplyr::pull(plant)
+df_wide <- df_wide_full |> slice(-excluded_idx)
+df_compounds <- df_wide |> dplyr::select(5:ncol(df_wide))
+invisible(capture.output(nmds_result <- metaMDS(df_compounds, k = 2, trymax = 50)))
+nmds_scores <- vegan::scores(nmds_result, display = "sites") |> as.data.frame() |> mutate(new_cat = df_wide$new_cat)
+
+ggplot(nmds_scores, aes(x = NMDS1, y = NMDS2, color = new_cat)) +
+  geom_point(size = 3, alpha = 0.8) + stat_ellipse(linetype = 2, size = 1) +
+  scale_color_manual(values = c("#DDCC77", "darkgreen", "orange")) +
+  labs(title = "NMDS Ordination of VOC Compounds", subtitle = paste0("Stress = ", round(nmds_result$stress, 3), " | n = ", nrow(nmds_scores)), x = "NMDS1", y = "NMDS2", color = "Category") +
+  theme_minimal()
+ggsave(here::here("Plots", "ESM4.png"), width = 9, height = 6, dpi = 600)
+```
+
+Observations excluded from NMDS: `r paste(excluded_plants, collapse = ", ")`
+
+::: {.callout-note title="NMDS including removed observations (click to show/hide)" collapse="true"}
+```{r}
+#| label: nmds_all_obs
+#| fig.width: 9
+#| fig.height: 6
+
+# NMDS on full plant × compound matrix (no exclusions)
+df_compounds_full <- df_wide_full |> dplyr::select(5:ncol(df_wide_full))
+invisible(capture.output(nmds_full <- metaMDS(df_compounds_full, k = 2, trymax = 50)))
+nmds_scores_full <- vegan::scores(nmds_full, display = "sites") |> as.data.frame() |> mutate(new_cat = df_wide_full$new_cat)
+
+ggplot(nmds_scores_full, aes(x = NMDS1, y = NMDS2, color = new_cat)) +
+  geom_point(size = 3, alpha = 0.8) + stat_ellipse(linetype = 2, size = 1) +
+  scale_color_manual(values = c("#DDCC77", "darkgreen", "orange")) +
+  labs(title = "NMDS Ordination (all observations)", subtitle = paste0("Stress = ", round(nmds_full$stress, 3), " | n = ", nrow(nmds_scores_full)), x = "NMDS1", y = "NMDS2", color = "Category") +
+  theme_minimal()
+```
+:::
+
+::: {.callout-note title="ESM4: PERMANOVA (Bray–Curtis, category)" collapse="true"}
+```{r}
+#| label: stats_esm4
+
+print(adonis2(df_compounds ~ new_cat, data = df_wide, method = "bray", na.action = na.fail))
+```
+:::
+
+### ESM5
+```{r}
+#| label: ESM5
+#| fig.width: 9
+#| fig.height: 4
+#| fig-cap: "ESM 5. Boxplots of distances of plant samples to their group centroid based on Bray–Curtis dissimilarities for each plant category. Larger values indicate greater within-group dispersion in floral volatile organic compounds (FVOCs) composition."
+
+# Multivariate dispersion (betadisper); uses df_wide/df_compounds from ESM4
+bd <- betadisper(vegdist(df_compounds, method = "bray"), df_wide$new_cat)
+boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = c("#DDCC77", "darkgreen", "orange"))
+invisible(capture.output({
+  png(here::here("Plots", "ESM5.png"), width = 9, height = 4, units = "in", res = 600)
+  boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = c("#DDCC77", "darkgreen", "orange"))
+  dev.off()
+}))
+```
+
+::: {.callout-note title="ESM5: Dispersion (anova/permutest) and ANOVA (richness, Shannon)" collapse="true"}
+```{r}
+#| label: stats_esm5
+
+anova(bd)
+permutest(bd, permutations = 999)
+richness <- specnumber(df_compounds)
+summary(aov(richness ~ new_cat, data = df_wide))
+shannon_div <- vegan::diversity(df_compounds)
+summary(aov(shannon_div ~ new_cat, data = df_wide))
+```
+:::
+
+### ESM6
+```{r}
+#| label: ESM6
+#| fig.width: 14
+#| fig.height: 8
+#| fig-cap: "ESM 6. Phylogenetic tree for the 113 plants sampled in Aotearoa-New Zealand and colored by categories: crops (light yellow), ornamentals (orange) and natives (green)."
+
+# --- Build phylogeny (V.PhyloMaker2) ---
+df$species <- df$plant
+df <- df |> mutate(family = as.character(family), family = if_else(genus == "Griselinia", "Griseliniaceae", family), family = factor(family))
+df <- df |> mutate(family = as.character(family), family = if_else(genus == "Phormium", "Asphodelaceae", family), family = factor(family))
+sp.list <- df |> dplyr::distinct(genus, species, family, new_cat) |> dplyr::select(species, genus, family, new_cat)
+data("GBOTB.extended.TPL")
+data("nodes.info.1.TPL")
+tree <- phylo.maker(sp.list = sp.list, tree = GBOTB.extended.TPL, nodes = nodes.info.1.TPL, scenarios = "S3")
+my_tree <- tree$scenario.3
+my_tree$tip.label <- gsub(" ", "_", my_tree$tip.label)
+sp.list_clean <- sp.list |> dplyr::mutate(label = gsub(" ", "_", as.character(species))) |> dplyr::select(label, new_cat)
+
+# Circular phylogeny: tips coloured by plant category (Crops, Natives, Ornamentals)
+ggtree(my_tree, layout = "circular") %<+% sp.list_clean +
+  geom_tippoint(aes(color = new_cat), size = 2, na.rm = TRUE) +
+  geom_tiplab(aes(color = new_cat), size = 3, offset = 0.5) +
+  labs(color = "Plant Category") +
+  scale_color_manual(values = c(Crops = "#DDCC77", Natives = "darkgreen", Ornamentals = "orange"), na.value = "grey50") +
+  theme_void() + theme(legend.justification = c(1, 1))
+
+# --- Prune tree to species in VOC data; prepare for Pagel's λ and PGLS ---
+voc_richness <- df |> group_by(plant) |> summarise(voc_richness = n_distinct(compound), new_cat = dplyr::first(as.character(new_cat)), .groups = "drop")
+voc_richness$plant <- gsub(" ", "_", voc_richness$plant)
+common <- dplyr::intersect(my_tree$tip.label, voc_richness$plant)
+tree2 <- ape::drop.tip(my_tree, dplyr::setdiff(my_tree$tip.label, common))
+voc_richness <- voc_richness |> filter(plant %in% common) |> slice(match(tree2$tip.label, plant))
+voc_richness_df <- as.data.frame(voc_richness)
+rownames(voc_richness_df) <- NULL
+tree2$node.label <- NULL
+voc_richness_df$plant <- as.character(voc_richness_df$plant)
+ggsave(here::here("Plots", "ESM6.png"), width = 14, height = 8, dpi = 600)
+```
+
+::: {.callout-note title="ESM6: Pagel's λ (phylogenetic signal in VOC richness)" collapse="true"}
+```{r}
+#| label: ESM6_pagel
+
+lambda <- phytools::phylosig(tree2, voc_richness$voc_richness, method = "lambda", test = TRUE)
+print(lambda)
+```
+:::
+
+::: {.callout-note title="ESM6: PGLS (VOC richness ~ intercept) & (VOC richness ~ category)" collapse="true"}
+```{r}
+#| label: ESM6_pgls
+
+comp_data <- caper::comparative.data(phy = tree2, data = voc_richness_df, names.col = "plant", vcv = TRUE)
+pgls_model_intercept <- caper::pgls(voc_richness ~ 1, data = comp_data, lambda = "ML")
+pgls_model_category <- caper::pgls(voc_richness ~ new_cat, data = comp_data, lambda = "ML")
+summary(pgls_model_intercept)
+summary(pgls_model_category)
+```
+:::
+
+::: {.callout-note title="ESM6: Phylogenetic distance vs VOC distance (Mantel test)" collapse="true"}
+```{r}
+#| label: ESM6_mantel
+
+# Species × compound matrix (abundance) for species in tree2
+voc_wide <- df |> mutate(plant = gsub(" ", "_", plant)) |> group_by(plant, compound) |> summarise(abundance = sum(abundance), .groups = "drop")
+voc_matrix <- voc_wide |> reshape2::dcast(plant ~ compound, value.var = "abundance", fill = 0)
+rownames(voc_matrix) <- voc_matrix$plant
+voc_matrix <- as.matrix(voc_matrix[, -1])
+common_sp <- intersect(tree2$tip.label, rownames(voc_matrix))
+voc_matrix <- voc_matrix[common_sp, , drop = FALSE]
+tree2_mantel <- ape::drop.tip(tree2, setdiff(tree2$tip.label, common_sp))
+voc_dist <- vegdist(voc_matrix, method = "bray")
+phylo_dist <- cophenetic(tree2_mantel)
+mantel(voc_dist, phylo_dist, permutations = 999)
+```
+:::
+
+### ESM7
+```{r}
+#| label: regional_crops_bar
+#| fig.width: 9
+#| fig.height: 4.5
+#| fig-cap: "ESM 7. Top 10 most frequent compounds for exotic crops (arable and fruit) grown in Aotearoa-New Zealand."
+
+# Top 10 VOCs per crop type (Arable vs Fruit); uses df_crops from Figure 6
+df_ranked_crops <- df_crops |> group_by(type) |> count(compound, sort = TRUE) |>
+  slice_max(n, n = 10, with_ties = FALSE) |> ungroup()
+
+ggplot(df_ranked_crops, aes(x = tidytext::reorder_within(compound, n, type), y = n, fill = type)) +
+  geom_bar(stat = "identity", alpha = 0.6) + coord_flip() + facet_wrap(~type, scales = "free", ncol = 2) +
+  tidytext::scale_x_reordered() + scale_fill_manual(values = c("darkblue", "darkred")) +
+  labs(x = "VOC Compound", y = "Count") + theme_classic() + theme(legend.position = "none")
+ggsave(here::here("Plots", "ESM7.png"), width = 9, height = 4.5, dpi = 600)
+```
 
 # References
-
-McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
 
 R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
 
@@ -232,4 +700,5 @@ R Core Team (2022). R: A language and environment for statistical computing. R F
 #| label: session-info
 
 utils::sessionInfo()
-``` 
+```
+::: 
