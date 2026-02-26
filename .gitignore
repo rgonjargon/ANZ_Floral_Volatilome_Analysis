@@ -23,3 +23,6 @@ Thumbs.db
 # Env
 .env
 .Renviron
+
+# Data (optional / large)
+voc_Idata.xlsx
