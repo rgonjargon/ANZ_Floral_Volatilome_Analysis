@@ -277,6 +277,10 @@ ggsave(here::here("Plots", "Figure4.png"), width = 9, height = 3.5, dpi = 600)
 df_wide <- df |> reshape2::dcast(unique_id + new_cat + location + region + family + order + plant ~ compound, value.var = "abundance", fun.aggregate = sum)
 df_compounds <- df_wide |> dplyr::select(where(is.numeric))
 
+# Disparity analysis (mean within- and between-group Euclidean distances)
+dist_matrix <- dist(df_compounds, method = "euclidean")
+disparity <- meandist(dist_matrix, df_wide$new_cat)
+
 # Diversity: richness (q=0), Shannon/Hill (q=1), evenness (Pielou J)
 richness <- specnumber(df_compounds)
 shannon_div <- vegan::diversity(df_compounds, index = "shannon")
@@ -310,10 +314,18 @@ p_richness + p_evenness + p_hill + plot_layout(ncol = 3) + plot_annotation(tag_l
 ggsave(here::here("Plots", "Figure5.png"), width = 9, height = 3.5, dpi = 600)
 ```
 
-::: {.callout-note title="Figure 5: Kruskal-Wallis and post-hoc Wilcoxon (diversity by category)" collapse="true"}
+::: {.callout-note title="Figure 5: Disparity (meandist), MRPP, Kruskal-Wallis and post-hoc Wilcoxon (diversity by category)" collapse="true"}
 ```{r}
 #| label: stats_fig5
 
+# Disparity: mean within- and between-group distances
+print(disparity)
+summary(disparity)
+
+# MRPP (Multi Response Permutation Procedure) on Euclidean distances
+vegan::mrpp(dat = df_compounds, grouping = df_wide$new_cat, distance = "euclidean", permutations = 999)
+
+# Diversity tests
 kruskal.test(richness ~ new_cat, data = diversity_df)
 kruskal.test(hill_q1 ~ new_cat, data = diversity_df)
 kruskal.test(evenness ~ new_cat, data = diversity_df)
