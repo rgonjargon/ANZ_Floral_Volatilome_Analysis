@@ -1,8 +1,8 @@
-# Flore VOC
+# Floral Volatilome Analysis
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18793708.svg)](https://doi.org/10.5281/zenodo.18793708)
 
-Analysis of floral volatile organic compounds (FVOCs) from New Zealand plants—natives, crops, and ornamentals—for *The chemical diversity of floral volatilomes in native and exotic plants shaping Aotearoa-New Zealand's odourscapes, implications for plant-insect interactions*.
+Analysis of floral volatile organic compounds (FVOCs; i.e., volatile) from New Zealand plants—natives, crops, and ornamentals—for *The chemical diversity of floral volatilomes in native and exotic plants shaping Aotearoa-New Zealand's odourscapes, implications for plant-insect interactions*.
 
 **Cite:** [https://doi.org/10.5281/zenodo.18793708](https://doi.org/10.5281/zenodo.18793708)
 
@@ -33,4 +33,4 @@ Output: `Scripts/2_voc_analysis.html`.
 
 ## Authors
 
-Tom Moore & Flore Mas
+Flore Mas & Tom Moore
