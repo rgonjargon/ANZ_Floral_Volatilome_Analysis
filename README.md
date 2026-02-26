@@ -1,15 +1,18 @@
 # Flore VOC
 
-NZ Floral Volatilome Analysis — analysis of floral volatile organic compounds (VOCs) from New Zealand plants (Natives, Crops, Ornamentals).
+Analysis of floral volatile organic compounds (FVOCs) from New Zealand plants—natives, crops, and ornamentals—for *The chemical diversity of floral volatilomes in native and exotic plants shaping Aotearoa-New Zealand's odourscapes, implications for plant-insect interactions*.
 
-## Repo
+## Project structure
 
-- **Scripts/** — Quarto report `1_analysis.qmd`; render produces `2_voc_analysis.html`.
-- **Analysis/Data/** — Input data (Excel); paths used in the report.
+| Folder / file | Contents |
+|---------------|----------|
+| **Scripts/** | `1_analysis.qmd` — main Quarto report; renders to `2_voc_analysis.html` |
+| **Analysis/Data/** | Input data (Excel/CSV) used by the report |
+| **Plots/** | Figures (Figures 1–7, ESM 1–7) saved by the report |
 
-## Run the report
+## How to run
 
-From the project root in R or a terminal:
+From the project root:
 
 ```bash
 quarto render Scripts/1_analysis.qmd
@@ -19,7 +22,8 @@ Output: `Scripts/2_voc_analysis.html`.
 
 ## Requirements
 
-R with packages listed in the setup chunk of `1_analysis.qmd` (tidyverse, readxl, here, vegan, janitor, tidytext, ggvenn, reshape2, ape, ggtree, patchwork, RColorBrewer, etc.). Quarto: [quarto.org](https://quarto.org).
+- [R](https://www.r-project.org/) and [Quarto](https://quarto.org/)
+- R packages: see the setup chunk in `1_analysis.qmd` (tidyverse, readxl, here, vegan, janitor, tidytext, ggvenn, reshape2, ape, ggtree, patchwork, RColorBrewer, ggvegan, V.PhyloMaker2, etc.)
 
 ## Authors
 
