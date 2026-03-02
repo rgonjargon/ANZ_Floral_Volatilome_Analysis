@@ -311,6 +311,19 @@ pairwise.wilcox.test(diversity_df$evenness, diversity_df$new_cat, p.adjust.metho
 ```
 :::
 
+::: {.callout-note title="Figure 5: Disparity analysis (mean distance by category)" collapse="true"}
+```{r}
+#| label: disparity_fig5
+
+# Disparity analysis: mean within- and between-group distances (Euclidean on compound abundances)
+df_compounds <- df_wide |> dplyr::select(where(is.numeric))
+dist_matrix <- dist(df_compounds, method = "euclidean")
+disparity <- vegan::meandist(dist_matrix, df_wide$new_cat)
+disparity
+plot(disparity, kind = "histogram")
+```
+:::
+
 ## Figure 6
 ```{r}
 #| label: regional_crops
@@ -463,7 +476,7 @@ nmds_scores <- vegan::scores(nmds_result, display = "sites") |> as.data.frame() 
 
 ggplot(nmds_scores, aes(x = NMDS1, y = NMDS2, color = new_cat)) +
   geom_point(size = 3, alpha = 0.8) + stat_ellipse(linetype = 2, size = 1) +
-  scale_color_manual(values = c("#DDCC77", "darkgreen", "orange")) +
+  scale_color_manual(values = c(Crops = "#DDCC77", Natives = "darkgreen", Ornamentals = "orange")) +
   labs(title = "NMDS Ordination of VOC Compounds", subtitle = paste0("Stress = ", round(nmds_result$stress, 3), " | n = ", nrow(nmds_scores)), x = "NMDS1", y = "NMDS2", color = "Category") +
   theme_minimal()
 ggsave(here::here("Plots", "ESM4.png"), width = 9, height = 6, dpi = 600)
@@ -485,9 +498,10 @@ print(adonis2(df_compounds ~ new_cat, data = df_wide, method = "bray", na.action
 
 # Multivariate dispersion (betadisper); uses df_wide/df_compounds from ESM4
 bd <- betadisper(vegdist(df_compounds, method = "bray"), df_wide$new_cat)
-boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = c("#DDCC77", "darkgreen", "orange"))
+cat_colours <- c(Crops = "#DDCC77", Natives = "darkgreen", Ornamentals = "orange")
+boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = cat_colours[levels(df_wide$new_cat)])
 png(here::here("Plots", "ESM5.png"), width = 9, height = 4, units = "in", res = 600)
-boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = c("#DDCC77", "darkgreen", "orange"))
+boxplot(bd, xlab = "Plant category", ylab = "Distance to centroid (Bray–Curtis)", main = "Multivariate dispersion", col = cat_colours[levels(df_wide$new_cat)])
 dev.off()
 ```
 
