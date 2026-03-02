@@ -22,6 +22,10 @@ Thumbs.db
 
 # Data (xlsx, csv, etc.)
 Analysis/Data/
+Analysis/Data/flower_phenology.xlsx
+Analysis/Data/voc_clean.csv
+voc_Idata*
+Analysis/Data/voc_ldata.xlsx
 
 # Env
 .env
