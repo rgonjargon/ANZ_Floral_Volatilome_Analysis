@@ -9,6 +9,7 @@
 *.knit.md
 *_cache/
 *_files/
+README.html
 
 # OS
 .DS_Store
