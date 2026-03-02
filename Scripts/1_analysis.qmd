@@ -362,8 +362,8 @@ count_df <- df_pheno_filtered |> group_by(new_cat, season) |> summarise(nb_plant
 
 # Panel A: mean relative abundance by season and chemical class (by category)
 p1 <- ggplot(df_pheno_filtered, aes(x = season, y = rel_abund, colour = new_class, group = new_class)) +
-  geom_line(data = mean_df, aes(x = season, y = mean_abund, colour = new_class, group = new_class), linewidth = 1, position = position_dodge(width = 0.1)) +
-  geom_point(data = mean_df, aes(x = season, y = mean_abund, colour = new_class), position = position_dodge(width = 0.1), size = 2.5) +
+  geom_smooth(data = mean_df, aes(x = season, y = mean_abund, colour = new_class, group = new_class), method = "loess", span = 1, se = FALSE) +
+  geom_point(data = mean_df, aes(x = season, y = mean_abund, colour = new_class), size = 2.5) +
   facet_grid(new_cat ~ .) +
   scale_colour_manual(name = "Chemical Class", values = c("Benzenoid" = "#A8A6A7FF", "Fatty acid derivatives" = "#006A8EFF", "Terpenoids" = "#B1283AFF")) +
   labs(title = "A) Seasonal patterns of chemical classes", y = "Mean relative abundance", x = "Season") +
