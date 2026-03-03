@@ -298,13 +298,13 @@ p_richness + p_evenness + p_hill + plot_layout(ncol = 3) + plot_annotation(tag_l
 ggsave(here::here("Plots", "Figure5.png"), width = 9, height = 3.5, dpi = 600)
 ```
 
-::: {.callout-note title="Figure 5: ANOVA and post-hoc Wilcoxon (diversity by category)" collapse="true"}
+::: {.callout-note title="Figure 5: Kruskal–Wallis and post-hoc Wilcoxon (diversity by category)" collapse="true"}
 ```{r}
 #| label: stats_fig5
 
-summary(aov(richness ~ new_cat, data = diversity_df))
-summary(aov(hill_q1 ~ new_cat, data = diversity_df))
-summary(aov(evenness ~ new_cat, data = diversity_df))
+kruskal.test(richness ~ new_cat, data = diversity_df)
+kruskal.test(hill_q1 ~ new_cat, data = diversity_df)
+kruskal.test(evenness ~ new_cat, data = diversity_df)
 pairwise.wilcox.test(diversity_df$richness, diversity_df$new_cat, p.adjust.method = "BH")
 pairwise.wilcox.test(diversity_df$hill_q1, diversity_df$new_cat, p.adjust.method = "BH")
 pairwise.wilcox.test(diversity_df$evenness, diversity_df$new_cat, p.adjust.method = "BH")
@@ -315,9 +315,9 @@ pairwise.wilcox.test(diversity_df$evenness, diversity_df$new_cat, p.adjust.metho
 ```{r}
 #| label: disparity_fig5
 
-# Disparity analysis: mean within- and between-group distances (Euclidean on compound abundances)
+# Disparity analysis: mean within- and between-group distances (Bray–Curtis on compound abundances)
 df_compounds <- df_wide |> dplyr::select(where(is.numeric))
-dist_matrix <- dist(df_compounds, method = "euclidean")
+dist_matrix <- vegan::vegdist(df_compounds, method = "bray")
 disparity <- vegan::meandist(dist_matrix, df_wide$new_cat)
 disparity
 plot(disparity, kind = "histogram")
@@ -566,13 +566,15 @@ print(lambda)
 ```
 :::
 
-::: {.callout-note title="ESM6: PGLS (VOC richness ~ 1)" collapse="true"}
+::: {.callout-note title="ESM6: PGLS (VOC richness ~ 1 and ~ new_cat)" collapse="true"}
 ```{r}
 #| label: ESM6_pgls
 
 comp_data <- caper::comparative.data(phy = tree2, data = voc_richness_df, names.col = "plant", vcv = TRUE)
-pgls_model <- caper::pgls(voc_richness ~ 1, data = comp_data, lambda = "ML")
-summary(pgls_model)
+pgls_null <- caper::pgls(voc_richness ~ 1, data = comp_data, lambda = "ML")
+pgls_full <- caper::pgls(voc_richness ~ new_cat, data = comp_data, lambda = "ML")
+summary(pgls_null)
+summary(pgls_full)
 ```
 :::
 
