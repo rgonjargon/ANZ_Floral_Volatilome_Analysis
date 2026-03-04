@@ -554,6 +554,13 @@ voc_richness_df <- as.data.frame(voc_richness)
 rownames(voc_richness_df) <- NULL
 tree2$node.label <- NULL
 voc_richness_df$plant <- as.character(voc_richness_df$plant)
+# Plant × compound matrix for Mantel test (same species as tree2)
+df_plant <- df |> mutate(plant = gsub(" ", "_", plant))
+voc_matrix <- df_plant |> reshape2::dcast(plant ~ compound, value.var = "abundance", fun.aggregate = sum)
+voc_matrix <- voc_matrix |> filter(plant %in% tree2$tip.label) |> slice(match(tree2$tip.label, plant))
+rownames(voc_matrix) <- voc_matrix$plant
+voc_matrix$plant <- NULL
+voc_matrix <- as.matrix(voc_matrix)
 ggsave(here::here("Plots", "ESM6.png"), width = 14, height = 8, dpi = 600)
 ```
 
@@ -575,6 +582,16 @@ pgls_null <- caper::pgls(voc_richness ~ 1, data = comp_data, lambda = "ML")
 pgls_full <- caper::pgls(voc_richness ~ new_cat, data = comp_data, lambda = "ML")
 summary(pgls_null)
 summary(pgls_full)
+```
+:::
+
+::: {.callout-note title="ESM6: Mantel test (VOC dissimilarity vs phylogenetic distance)" collapse="true"}
+```{r}
+#| label: ESM6_mantel
+
+voc_dist <- vegdist(voc_matrix, method = "bray")
+phylo_dist <- cophenetic(tree2)
+mantel(voc_dist, phylo_dist, permutations = 999)
 ```
 :::
 
